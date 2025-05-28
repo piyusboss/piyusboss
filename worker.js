@@ -1,38 +1,43 @@
-// deno-lint-ignore-file no-explicit-any
-const handler = async (request: Request): Promise<Response> => {
-  if (request.method !== "POST") {
-    return new Response("Only POST allowed", { status: 405 });
+// Deno-compatible worker.js for HuggingFace inference
+
+// Set your HuggingFace model URL (public model, no token needed for free use)
+const HF_MODEL_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1";
+
+Deno.serve(async (req) => {
+  if (req.method !== "POST") {
+    return new Response("Only POST method is allowed", { status: 405 });
   }
 
   try {
-    const body: any = await request.json();
-    const message: string = body.message || "";
+    const { message } = await req.json();
+    if (!message || typeof message !== "string") {
+      return new Response("Missing or invalid 'message' field", { status: 400 });
+    }
 
-    const payload = {
-      inputs: `### Instruction:\n${message}\n\n### Response:`,
-      options: { wait_for_model: true }
-    };
+    const prompt = `### Instruction:\n${message}\n\n### Response:`;
 
-    const response = await fetch("https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1", {
+    const hfResponse = await fetch(HF_MODEL_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({
+        inputs: prompt,
+        options: { wait_for_model: true }
+      })
     });
 
-    const data = await response.json();
+    const result = await hfResponse.json();
 
-    if (data[0]?.generated_text) {
-      const reply = data[0].generated_text.replace(/^.*### Response:/s, "").trim();
+    if (Array.isArray(result) && result[0]?.generated_text) {
+      const reply = result[0].generated_text.replace(/^.*### Response:/s, "").trim();
       return new Response(reply, { status: 200 });
+    } else if (result?.error) {
+      return new Response("HuggingFace API error: " + result.error, { status: 503 });
     } else {
-      return new Response("AI model didn't respond properly: " + JSON.stringify(data), { status: 500 });
+      return new Response("Unexpected response from HuggingFace", { status: 500 });
     }
-
   } catch (err) {
-    return new Response("Server Error: " + err.toString(), { status: 500 });
+    return new Response("Server Error: " + err.message, { status: 500 });
   }
-};
-
-Deno.serve(handler);
+});
