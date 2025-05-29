@@ -8,7 +8,8 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 // 2. The model 'meta-llama/Meta-Llama-3-8B-Instruct' is GATED. You MUST request access on Hugging Face
 //    and ensure your API key has permissions. If not, use a public model like 'gpt2' for testing.
 const HUGGING_FACE_API_KEY_ENV = Deno.env.get("HUGGING_FACE_API_KEY");
-const FALLBACK_HUGGING_FACE_API_KEY = "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"; // Replace if you have a different fallback, but ENV VAR is preferred
+const FALLBACK_HUGGING_FACE_API_KEY = "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";
+ // Replace if you have a different fallback, but ENV VAR is preferred
 const HUGGING_FACE_API_KEY = HUGGING_FACE_API_KEY_ENV || FALLBACK_HUGGING_FACE_API_KEY;
 
 // !!! ACTION REQUIRED: VERIFY MODEL ACCESS OR CHANGE MODEL !!!
