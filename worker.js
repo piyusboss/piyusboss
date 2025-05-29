@@ -1,4 +1,4 @@
-// worker.js (Deno, with public Mixtral model)
+// worker.js (Deno, with Mixtral model + structured chat prompt)
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 
 const HUGGING_FACE_API_KEY = "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";
@@ -17,11 +17,12 @@ async function callHuggingFaceAPI(userMessage) {
   }
 
   const payload = {
-    inputs: sanitizedMessage,
+    inputs: [
+      { role: "user", content: sanitizedMessage }
+    ],
     parameters: {
       max_new_tokens: 300,
       temperature: 0.7,
-      return_full_text: false,
     },
     options: {
       wait_for_model: true,
@@ -45,6 +46,10 @@ async function callHuggingFaceAPI(userMessage) {
       return {
         error: responseData.error || `Error from HF API: ${apiResponse.status}`,
       };
+    }
+
+    if (responseData?.generated_text) {
+      return { response: responseData.generated_text.trim() };
     }
 
     if (Array.isArray(responseData) && responseData[0]?.generated_text) {
