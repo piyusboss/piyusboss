@@ -15,7 +15,7 @@ const HUGGING_FACE_API_KEY = HUGGING_FACE_API_KEY_ENV || FALLBACK_HUGGING_FACE_A
 // Using 'meta-llama/Meta-Llama-3-8B-Instruct' requires you to accept terms on Hugging Face.
 // If you see 404 errors, this is the most likely cause.
 // For testing, try a public model: const HUGGING_FACE_MODEL = 'gpt2';
-const HUGGING_FACE_MODEL = 'meta-llama/Meta-Llama-3-8B-Instruct';
+const HUGGING_FACE_MODEL = 'meta-llama/meta-llama-3-8b-instruct';
 const HUGGING_FACE_API_URL = `https://api-inference.huggingface.co/models/${HUGGING_FACE_MODEL}`;
 
 if (!HUGGING_FACE_API_KEY_ENV) {
