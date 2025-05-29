@@ -1,4 +1,4 @@
-// worker.js (Deno, Mixtral model with text-formatted prompt)
+// worker.js (Improved Deno AI worker for Mixtral)
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 
 const HUGGING_FACE_API_KEY = "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";
@@ -16,14 +16,16 @@ async function callHuggingFaceAPI(userMessage) {
     return { error: "Input message is empty." };
   }
 
-  // Prompt format expected by Mixtral
+  // Use prompt format suited for Mixtral
   const prompt = `### User: ${sanitizedMessage}\n\n### Assistant:`;
 
   const payload = {
     inputs: prompt,
     parameters: {
-      max_new_tokens: 300,
+      max_new_tokens: 512,
       temperature: 0.7,
+      top_p: 0.9,
+      do_sample: true,
       return_full_text: false,
     },
     options: {
@@ -42,19 +44,25 @@ async function callHuggingFaceAPI(userMessage) {
       body: JSON.stringify(payload),
     });
 
-    const responseData = await apiResponse.json();
+    const rawText = await apiResponse.text();
 
-    if (!apiResponse.ok) {
-      return {
-        error: responseData.error || `Error from HF API: ${apiResponse.status}`,
-      };
+    try {
+      const responseData = JSON.parse(rawText);
+
+      if (!apiResponse.ok) {
+        return {
+          error: responseData.error || `Error from HF API: ${apiResponse.status}`,
+        };
+      }
+
+      if (Array.isArray(responseData) && responseData[0]?.generated_text) {
+        return { response: responseData[0].generated_text.trim() };
+      }
+
+      return { error: "Unexpected response format from Hugging Face API." };
+    } catch (jsonErr) {
+      return { error: `Non-JSON response from Hugging Face: ${rawText}` };
     }
-
-    if (Array.isArray(responseData) && responseData[0]?.generated_text) {
-      return { response: responseData[0].generated_text.trim() };
-    }
-
-    return { error: "Unexpected response format from Hugging Face API." };
   } catch (err) {
     return { error: `Request failed: ${err.message}` };
   }
