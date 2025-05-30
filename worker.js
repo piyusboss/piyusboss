@@ -2,7 +2,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 
 const HUGGING_FACE_API_KEY = "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"; // ✅ Free-tier HF token
-const HUGGING_FACE_MODEL = "gpt2"; // ✅ 100% free and public model
+const HUGGING_FACE_MODEL = "meta-llama/meta-llama-3-8b-instruct"; // ✅ 100% free and public model
 const HUGGING_FACE_API_URL = `https://api-inference.huggingface.co/models/${HUGGING_FACE_MODEL}`;
 
 async function callHuggingFaceAPI(userMessage) {
