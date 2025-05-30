@@ -1,28 +1,20 @@
-// worker.js (Improved Deno AI worker for Mixtral)
+// worker(2).js (Fallback with public free model)
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 
-const HUGGING_FACE_API_KEY = "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";
-const HUGGING_FACE_MODEL = "mistralai/Mixtral-8x7B-Instruct-v0.1";
+const HUGGING_FACE_API_KEY = "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"; // still used if required
+const HUGGING_FACE_MODEL = "tiiuae/falcon-rw-1b"; // ✅ Free & public text generation model
 const HUGGING_FACE_API_URL = `https://api-inference.huggingface.co/models/${HUGGING_FACE_MODEL}`;
 
-/**
- * Calls the Hugging Face Inference API.
- * @param {string} userMessage The message from the user.
- * @returns {Promise<object>} An object with either 'response' or 'error' key.
- */
 async function callHuggingFaceAPI(userMessage) {
   const sanitizedMessage = String(userMessage || "").trim();
-  if (!sanitizedMessage) {
-    return { error: "Input message is empty." };
-  }
+  if (!sanitizedMessage) return { error: "Input message is empty." };
 
-  // Use prompt format suited for Mixtral
-  const prompt = `### User: ${sanitizedMessage}\n\n### Assistant:`;
+  const prompt = `You are Nexari AI, a helpful assistant.\n\n### User: ${sanitizedMessage}\n\n### Assistant:`;
 
   const payload = {
     inputs: prompt,
     parameters: {
-      max_new_tokens: 512,
+      max_new_tokens: 300,
       temperature: 0.7,
       top_p: 0.9,
       do_sample: true,
@@ -30,12 +22,11 @@ async function callHuggingFaceAPI(userMessage) {
     },
     options: {
       wait_for_model: true,
-      use_cache: false,
     },
   };
 
   try {
-    const apiResponse = await fetch(HUGGING_FACE_API_URL, {
+    const res = await fetch(HUGGING_FACE_API_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${HUGGING_FACE_API_KEY}`,
@@ -44,27 +35,19 @@ async function callHuggingFaceAPI(userMessage) {
       body: JSON.stringify(payload),
     });
 
-    const rawText = await apiResponse.text();
-
+    const rawText = await res.text();
     try {
-      const responseData = JSON.parse(rawText);
-
-      if (!apiResponse.ok) {
-        return {
-          error: responseData.error || `Error from HF API: ${apiResponse.status}`,
-        };
+      const parsed = JSON.parse(rawText);
+      if (!res.ok) return { error: parsed.error || `HF API error: ${res.status}` };
+      if (Array.isArray(parsed) && parsed[0]?.generated_text) {
+        return { response: parsed[0].generated_text.trim() };
       }
-
-      if (Array.isArray(responseData) && responseData[0]?.generated_text) {
-        return { response: responseData[0].generated_text.trim() };
-      }
-
-      return { error: "Unexpected response format from Hugging Face API." };
-    } catch (jsonErr) {
-      return { error: `Non-JSON response from Hugging Face: ${rawText}` };
+      return { error: "Unexpected response structure." };
+    } catch {
+      return { error: `Non-JSON response: ${rawText}` };
     }
   } catch (err) {
-    return { error: `Request failed: ${err.message}` };
+    return { error: `Network error: ${err.message}` };
   }
 }
 
@@ -84,10 +67,10 @@ serve(async (req) => {
     try {
       const body = await req.json();
       if (!body.message || typeof body.message !== "string") {
-        return new Response(
-          JSON.stringify({ error: "Missing or invalid 'message'." }),
-          { status: 400, headers: corsHeaders }
-        );
+        return new Response(JSON.stringify({ error: "Missing or invalid 'message'." }), {
+          status: 400,
+          headers: corsHeaders,
+        });
       }
 
       const result = await callHuggingFaceAPI(body.message);
@@ -96,15 +79,15 @@ serve(async (req) => {
         headers: corsHeaders,
       });
     } catch (err) {
-      return new Response(
-        JSON.stringify({ error: `Invalid JSON body. ${err.message}` }),
-        { status: 400, headers: corsHeaders }
-      );
+      return new Response(JSON.stringify({ error: `Bad request: ${err.message}` }), {
+        status: 400,
+        headers: corsHeaders,
+      });
     }
   }
 
-  return new Response(
-    JSON.stringify({ error: "Not Found. Use POST /generate." }),
-    { status: 404, headers: corsHeaders }
-  );
+  return new Response(JSON.stringify({ error: "Not Found. Use POST /generate." }), {
+    status: 404,
+    headers: corsHeaders,
+  });
 });
