@@ -1,7 +1,7 @@
-// worker(2).js (Totally Free Model - GPT2)
+// worker.js – Free Version using GPT2 (No Auth Needed)
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 
-const HUGGING_FACE_MODEL = "gpt2"; // ✅ Completely free and public
+const HUGGING_FACE_MODEL = "gpt2"; // ✅ 100% free and public model
 const HUGGING_FACE_API_URL = `https://api-inference.huggingface.co/models/${HUGGING_FACE_MODEL}`;
 
 async function callHuggingFaceAPI(userMessage) {
@@ -24,7 +24,7 @@ async function callHuggingFaceAPI(userMessage) {
     const res = await fetch(HUGGING_FACE_API_URL, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
+        "Content-Type": "application/json"
       },
       body: JSON.stringify(payload),
     });
