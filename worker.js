@@ -1,23 +1,18 @@
-// worker(2).js (Fallback with public free model)
+// worker(2).js (Totally Free Model - GPT2)
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 
-const HUGGING_FACE_API_KEY = "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"; // still used if required
-const HUGGING_FACE_MODEL = "tiiuae/falcon-rw-1b"; // ✅ Free & public text generation model
+const HUGGING_FACE_MODEL = "gpt2"; // ✅ Completely free and public
 const HUGGING_FACE_API_URL = `https://api-inference.huggingface.co/models/${HUGGING_FACE_MODEL}`;
 
 async function callHuggingFaceAPI(userMessage) {
   const sanitizedMessage = String(userMessage || "").trim();
   if (!sanitizedMessage) return { error: "Input message is empty." };
 
-  const prompt = `You are Nexari AI, a helpful assistant.\n\n### User: ${sanitizedMessage}\n\n### Assistant:`;
-
   const payload = {
-    inputs: prompt,
+    inputs: sanitizedMessage,
     parameters: {
-      max_new_tokens: 300,
+      max_new_tokens: 100,
       temperature: 0.7,
-      top_p: 0.9,
-      do_sample: true,
       return_full_text: false,
     },
     options: {
@@ -29,7 +24,6 @@ async function callHuggingFaceAPI(userMessage) {
     const res = await fetch(HUGGING_FACE_API_URL, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${HUGGING_FACE_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(payload),
@@ -56,7 +50,7 @@ serve(async (req) => {
   const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Headers": "Content-Type",
   };
 
   if (req.method === "OPTIONS") {
