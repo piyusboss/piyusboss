@@ -21,7 +21,18 @@ async function sendToGhost(userMessage, onUpdate) {
       })
     });
 
-    if (!response.ok) throw new Error("Network error");
+    if (!response.ok) { // This checks for HTTP status codes like 4xx, 5xx
+        let errorText = `Network error (${response.status} ${response.statusText})`;
+        try {
+            // Try to get more specific error text if the server sent any
+            const serverError = await response.text();
+            if(serverError) errorText += `: ${serverError}`;
+        } catch (e) {
+            // Ignore if can't read error text
+        }
+        throw new Error(errorText);
+    }
+
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder("utf-8");
@@ -50,16 +61,36 @@ document.addEventListener("DOMContentLoaded", () => {
       const msg = userInput.value.trim();
       if (!msg) return;
 
+      // Create a user message div (optional, but good for UI)
+      const userMsgDiv = document.createElement("div");
+      userMsgDiv.className = "user-message"; // Add a class for styling
+      userMsgDiv.textContent = `You: ${msg}`;
+      messages.appendChild(userMsgDiv);
+      messages.scrollTop = messages.scrollHeight;
+
+
       const replyDiv = document.createElement("div");
       replyDiv.className = "ghost-reply";
-      replyDiv.textContent = "Ghost_009 is thinking...";
+      replyDiv.textContent = "Ghost_009 is thinking..."; // Initial thinking message
       messages.appendChild(replyDiv);
+      messages.scrollTop = messages.scrollHeight;
 
-      sendToGhost(msg, (response) => {
-        replyDiv.textContent = response;
+
+      sendToGhost(msg, (responseChunk) => { // Changed 'response' to 'responseChunk' for clarity
+        // The response from PHP is streamed, so update the content
+        replyDiv.textContent = responseChunk; // This will update as new chunks arrive
+        messages.scrollTop = messages.scrollHeight; // Keep scrolled to bottom
       });
 
-      userInput.value = "";
+      userInput.value = ""; // Clear input after sending
+    });
+
+    // Optional: Allow sending with Enter key
+    userInput.addEventListener("keypress", function(event) {
+        if (event.key === "Enter") {
+            event.preventDefault(); // Prevent default action (like form submission)
+            sendBtn.click(); // Trigger send button click
+        }
     });
   }
 });
