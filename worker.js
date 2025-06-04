@@ -7,8 +7,7 @@ let controller = new AbortController();
 
 async function sendToGhost(userMessage, onUpdate) {
   try {
-    // Cancel previous request if needed
-    controller.abort();
+    controller.abort(); // Cancel any ongoing request
     controller = new AbortController();
 
     const response = await fetch("nexari_ai.php", {
@@ -32,9 +31,35 @@ async function sendToGhost(userMessage, onUpdate) {
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
-      onUpdate(buffer);
+      onUpdate(buffer); // Send live updates
     }
   } catch (err) {
+    console.error("[Ghost_009 Error]:", err);
     onUpdate(`[Ghost_009] ⚠️ Connection interrupted: ${err.message}`);
   }
 }
+
+// OPTIONAL: Auto-bind to frontend if DOM exists
+document.addEventListener("DOMContentLoaded", () => {
+  const sendBtn = document.getElementById("sendButton");
+  const userInput = document.getElementById("userInput");
+  const messages = document.getElementById("messages");
+
+  if (sendBtn && userInput && messages) {
+    sendBtn.addEventListener("click", () => {
+      const msg = userInput.value.trim();
+      if (!msg) return;
+
+      const replyDiv = document.createElement("div");
+      replyDiv.className = "ghost-reply";
+      replyDiv.textContent = "Ghost_009 is thinking...";
+      messages.appendChild(replyDiv);
+
+      sendToGhost(msg, (response) => {
+        replyDiv.textContent = response;
+      });
+
+      userInput.value = "";
+    });
+  }
+});
