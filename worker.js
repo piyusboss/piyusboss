@@ -3,7 +3,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 
 // --- CONFIGURATION ---
 // ! IMPORTANT: Use environment variables for API keys in production!
-const HUGGING_FACE_API_KEY = Deno.env.get("HUGGING_FACE_API_KEY") || "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";
+const HUGGING_FACE_API_KEY = Deno.env.get("HUGGING_FACE_API_KEY") || "YOUR_HUGGING_FACE_API_KEY"; // Change this
 const HUGGING_FACE_MODEL = "mistralai/Mixtral-8x7B-Instruct-v0.1";
 const HUGGING_FACE_API_URL = `https://api-inference.huggingface.co/models/${HUGGING_FACE_MODEL}`;
 
@@ -18,45 +18,53 @@ function buildPromptFromHistory(history) {
   }
 
   let prompt = "";
+  // The model expects a specific format. We will build it.
+  // It's often better to start with an instruction.
+  // Let's assume the very first message is from the user to start the conversation.
+  let isFirstUserMessage = true;
+
   for (const message of history) {
     if (message.sender === 'user') {
-      prompt += `### User: ${message.text}\n\n`;
+      // The format [INST] User Message [/INST] is specific to Mistral Instruct models
+      prompt += `[INST] ${message.text} [/INST]`;
+      isFirstUserMessage = false;
     } else if (message.sender === 'ai') {
-      prompt += `### Assistant: ${message.text}\n\n`;
+      // The assistant's response follows directly
+      prompt += ` ${message.text} `;
     }
   }
-  // The last message is from the user, so we end with the prompt for the assistant to reply.
-  prompt += `### Assistant:`;
+  
+  // The prompt is now a sequence of turns, ending with the latest user instruction.
+  // The model will generate the text that should follow.
   return prompt;
 }
 
 /**
  * Calls the Hugging Face Inference API.
- * @param {string} userMessage The latest user message.
+ * @param {string} userMessage The latest user message (less important now, as it's in history).
  * @param {Array<object>|null} history The full conversation history.
  * @returns {Promise<object>} An object with either a 'response' or 'error' key.
  */
 async function callHuggingFaceAPI(userMessage, history) {
-  const sanitizedMessage = String(userMessage || "").trim();
-  if (!sanitizedMessage) {
-    return { error: "Input message is empty." };
-  }
-
   // --- LOGIC CHANGE: Use history to build the prompt ---
-  // If history is provided and valid, use it. Otherwise, fall back to a simple prompt.
-  const prompt = (history && history.length > 1) 
+  // The prompt is now built entirely from the history for full context.
+  const prompt = (history && history.length > 0) 
     ? buildPromptFromHistory(history)
-    : `### User: ${sanitizedMessage}\n\n### Assistant:`;
+    : `[INST] ${String(userMessage || "").trim()} [/INST]`; // Fallback for single message
   // --- END LOGIC CHANGE ---
+  
+  if (!prompt) {
+      return { error: "Input message or history is empty." };
+  }
 
   const payload = {
     inputs: prompt,
     parameters: {
-      max_new_tokens: 512,
+      max_new_tokens: 1024, // Increased for better responses
       temperature: 0.7,
-      top_p: 0.9,
+      top_p: 0.95,
       do_sample: true,
-      return_full_text: false,
+      return_full_text: false, // We only want the newly generated part
     },
     options: {
       wait_for_model: true,
@@ -79,16 +87,20 @@ async function callHuggingFaceAPI(userMessage, history) {
     try {
       const responseData = JSON.parse(rawText);
       if (!apiResponse.ok) {
+        console.error("HF API Error:", responseData);
         return { error: responseData.error || `HF API Error: ${apiResponse.status} ${apiResponse.statusText}` };
       }
       if (Array.isArray(responseData) && responseData[0]?.generated_text) {
         return { response: responseData[0].generated_text.trim() };
       }
+      console.error("Unexpected HF Response Format:", responseData);
       return { error: "Unexpected response format from HF API." };
     } catch (jsonErr) {
+        console.error("Non-JSON Response from HF:", rawText);
       return { error: `Non-JSON response from HF: ${rawText.substring(0, 200)}...` };
     }
   } catch (err) {
+    console.error("Fetch to HF API failed:", err);
     return { error: `Request to HF API failed: ${err.message}` };
   }
 }
@@ -110,6 +122,7 @@ serve(async (req) => {
     try {
       const body = await req.json();
 
+      // The 'message' field is still useful for logging or simple cases.
       if (!body.message || typeof body.message !== "string") {
         return new Response(JSON.stringify({ error: "Missing or invalid 'message' in request body." }), {
           status: 400,
@@ -123,7 +136,7 @@ serve(async (req) => {
       // --- END LOGIC CHANGE ---
 
       return new Response(JSON.stringify(result), {
-        status: result.error ? 502 : 200,
+        status: result.error ? 500 : 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     } catch (err) {
