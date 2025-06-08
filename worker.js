@@ -3,7 +3,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 
 // --- CONFIGURATION ---
 // ! IMPORTANT: Use environment variables for API keys in production!
-const HUGGING_FACE_API_KEY = Deno.env.get("HUGGING_FACE_API_KEY") || "YOUR_HUGGING_FACE_API_KEY"; // Change this
+const HUGGING_FACE_API_KEY = Deno.env.get("HUGGING_FACE_API_KEY") || "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"; // Change this
 const HUGGING_FACE_MODEL = "mistralai/Mixtral-8x7B-Instruct-v0.1";
 const HUGGING_FACE_API_URL = `https://api-inference.huggingface.co/models/${HUGGING_FACE_MODEL}`;
 
