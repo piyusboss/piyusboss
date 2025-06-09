@@ -6,7 +6,7 @@ import { toArrayBuffer } from "https://deno.land/std@0.224.0/streams/to_array_bu
 
 // !!! IMPORTANT: Production mein environment variables ka istemal karein !!!
 // Command to run: HUGGING_FACE_API_KEY="your_hf_key_here" deno run --allow-net --allow-env worker.js
-const HUGGING_FACE_API_KEY = Deno.env.get("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");
+const HUGGING_FACE_API_KEY = Deno.env.get("HUGGING_FACE_API_KEY");
 if (!HUGGING_FACE_API_KEY) {
     console.error("HUGGING_FACE_API_KEY environment variable not set!");
     Deno.exit(1);
