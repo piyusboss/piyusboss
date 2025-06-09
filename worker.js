@@ -1,128 +1,156 @@
-// worker.js (Deno AI worker with BUILT-IN AUTHENTICATION, context, and image generation)
+// worker.js (Deno AI worker with full context support)
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { toArrayBuffer } from "https://deno.land/std@0.224.0/streams/to_array_buffer.ts";
 
 // --- CONFIGURATION ---
+// ! IMPORTANT: Use environment variables for API keys in production!
+const HUGGING_FACE_API_KEY = Deno.env.get("HUGGING_FACE_API_KEY") || "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"; // Change this
+const HUGGING_FACE_MODEL = "mistralai/Mixtral-8x7B-Instruct-v0.1";
+const HUGGING_FACE_API_URL = `https://api-inference.huggingface.co/models/${HUGGING_FACE_MODEL}`;
 
-// 1. Hugging Face Key: AI models ke liye
-const HUGGING_FACE_API_KEY = Deno.env.get("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");
+/**
+ * Builds a conversational prompt from a history array.
+ * @param {Array<object>} history Array of message objects [{sender: 'user'/'ai', text: '...'}]
+ * @returns {string} A formatted string for the Mixtral model.
+ */
+function buildPromptFromHistory(history) {
+  if (!history || !Array.isArray(history) || history.length === 0) {
+    return "";
+  }
 
-// 2. Allowed System Keys: Aapke system ko access karne ke liye keys (comma-separated)
-// Example: "key1,key2,key3"
-const NEXARI_ALLOWED_KEYS_STR = Deno.env.get("NEXARI_ALLOWED_KEYS");
-const ALLOWED_KEYS = NEXARI_ALLOWED_KEYS_STR ? NEXARI_ALLOWED_KEYS_STR.split(',') : ["your_secret_key_here"]; // Fallback key
+  let prompt = "";
+  // The model expects a specific format. We will build it.
+  // It's often better to start with an instruction.
+  // Let's assume the very first message is from the user to start the conversation.
+  let isFirstUserMessage = true;
 
-if (!HUGGING_FACE_API_KEY || !NEXARI_ALLOWED_KEYS_STR) {
-    console.error("FATAL: HUGGING_FACE_API_KEY and NEXARI_ALLOWED_KEYS environment variables must be set!");
-    console.log("Example command: NEXARI_ALLOWED_KEYS=\"key1,key2\" HUGGING_FACE_API_KEY=\"hf_...\" deno run --allow-net --allow-env worker.js");
-    Deno.exit(1);
+  for (const message of history) {
+    if (message.sender === 'user') {
+      // The format [INST] User Message [/INST] is specific to Mistral Instruct models
+      prompt += `[INST] ${message.text} [/INST]`;
+      isFirstUserMessage = false;
+    } else if (message.sender === 'ai') {
+      // The assistant's response follows directly
+      prompt += ` ${message.text} `;
+    }
+  }
+  
+  // The prompt is now a sequence of turns, ending with the latest user instruction.
+  // The model will generate the text that should follow.
+  return prompt;
 }
 
-const MODEL_MAP = {
-    "Nexari G1": "mistralai/Mixtral-8x7B-Instruct-v0.1",
-};
+/**
+ * Calls the Hugging Face Inference API.
+ * @param {string} userMessage The latest user message (less important now, as it's in history).
+ * @param {Array<object>|null} history The full conversation history.
+ * @returns {Promise<object>} An object with either a 'response' or 'error' key.
+ */
+async function callHuggingFaceAPI(userMessage, history) {
+  // --- LOGIC CHANGE: Use history to build the prompt ---
+  // The prompt is now built entirely from the history for full context.
+  const prompt = (history && history.length > 0) 
+    ? buildPromptFromHistory(history)
+    : `[INST] ${String(userMessage || "").trim()} [/INST]`; // Fallback for single message
+  // --- END LOGIC CHANGE ---
+  
+  if (!prompt) {
+      return { error: "Input message or history is empty." };
+  }
 
-const IMAGE_MODEL_ID = "stabilityai/stable-diffusion-xl-base-1.0";
+  const payload = {
+    inputs: prompt,
+    parameters: {
+      max_new_tokens: 1024, // Increased for better responses
+      temperature: 0.7,
+      top_p: 0.95,
+      do_sample: true,
+      return_full_text: false, // We only want the newly generated part
+    },
+    options: {
+      wait_for_model: true,
+      use_cache: false,
+    },
+  };
 
-const CORS_HEADERS = {
-    "Access-Control-Allow-Origin": "*",
+  try {
+    const apiResponse = await fetch(HUGGING_FACE_API_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${HUGGING_FACE_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const rawText = await apiResponse.text();
+
+    try {
+      const responseData = JSON.parse(rawText);
+      if (!apiResponse.ok) {
+        console.error("HF API Error:", responseData);
+        return { error: responseData.error || `HF API Error: ${apiResponse.status} ${apiResponse.statusText}` };
+      }
+      if (Array.isArray(responseData) && responseData[0]?.generated_text) {
+        return { response: responseData[0].generated_text.trim() };
+      }
+      console.error("Unexpected HF Response Format:", responseData);
+      return { error: "Unexpected response format from HF API." };
+    } catch (jsonErr) {
+        console.error("Non-JSON Response from HF:", rawText);
+      return { error: `Non-JSON response from HF: ${rawText.substring(0, 200)}...` };
+    }
+  } catch (err) {
+    console.error("Fetch to HF API failed:", err);
+    return { error: `Request to HF API failed: ${err.message}` };
+  }
+}
+
+// --- HTTP SERVER LOGIC ---
+serve(async (req) => {
+  const url = new URL(req.url);
+  const corsHeaders = {
+    "Access-Control-Allow-Origin": "*", // Restrict in production
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
-};
+  };
 
-// ... (buildFullPrompt, callHuggingFaceTextAPI, callHuggingFaceImageAPI functions same rahenge) ...
-function buildFullPrompt(userMessage, context) {
-    const history = context?.current_conversation || [];
-    const memory = context?.long_term_memory_summary || "";
-    let prompt = "[INST] You are Nexari, a helpful and intelligent AI assistant. \n";
-    if (memory) {
-        prompt += `Here is a summary of your past conversations with this user. Use this information to provide context-aware responses:\n${memory}\n\n`;
-    }
-    prompt += "Current conversation:\n";
-    if (Array.isArray(history)) {
-        for (const message of history) {
-            prompt += `${message.sender === 'user' ? 'User' : 'Nexari'}: ${message.text}\n`;
-        }
-    }
-    prompt += `User: ${userMessage.trim()} [/INST]\nNexari:`;
-    return prompt;
-}
-async function callHuggingFaceTextAPI(modelId, prompt) { /* ...No changes here... */ 
-    const apiUrl = `https://api-inference.huggingface.co/models/${modelId}`;
-    const payload = { inputs: prompt, parameters: { max_new_tokens: 1500, return_full_text: false } };
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: corsHeaders });
+  }
+
+  if (req.method === "POST" && url.pathname === "/generate") {
     try {
-        const res = await fetch(apiUrl, { method: "POST", headers: { Authorization: `Bearer ${HUGGING_FACE_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-        const data = await res.json();
-        if (!res.ok) return { error: data.error || `HF API Error: ${res.status}` };
-        return { response: data[0]?.generated_text.trim() };
-    } catch (err) { return { error: `Request to HF API failed: ${err.message}` }; }
-}
-async function callHuggingFaceImageAPI(prompt) { /* ...No changes here... */
-    const apiUrl = `https://api-inference.huggingface.co/models/${IMAGE_MODEL_ID}`;
-    try {
-        const res = await fetch(apiUrl, { method: "POST", headers: { Authorization: `Bearer ${HUGGING_FACE_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ inputs: prompt }) });
-        if (!res.ok) { const errTxt = await res.text(); return { error: JSON.parse(errTxt).error || `HF API Error: ${res.status}` }; }
-        const imageBuffer = await toArrayBuffer(res.body);
-        const imageBase64 = btoa(String.fromCharCode(...new Uint8Array(imageBuffer)));
-        return { image_url: `data:${res.headers.get("content-type") || "image/jpeg"};base64,${imageBase64}` };
-    } catch (err) { return { error: `Request to HF Image API failed: ${err.message}` }; }
-}
+      const body = await req.json();
 
-
-// --- HTTP SERVER LOGIC (Updated with Authentication) ---
-serve(async (req) => {
-    const url = new URL(req.url);
-
-    if (req.method === "OPTIONS") {
-        return new Response(null, { status: 204, headers: CORS_HEADERS });
-    }
-
-    // --- AUTHENTICATION LOGIC ---
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        return new Response(JSON.stringify({ error: "Unauthorized: Missing or invalid Authorization header." }), {
-            status: 401,
-            headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      // The 'message' field is still useful for logging or simple cases.
+      if (!body.message || typeof body.message !== "string") {
+        return new Response(JSON.stringify({ error: "Missing or invalid 'message' in request body." }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
-    }
+      }
+      
+      // --- LOGIC CHANGE: Pass history to the API call ---
+      const history = body.history && Array.isArray(body.history) ? body.history : null;
+      const result = await callHuggingFaceAPI(body.message, history);
+      // --- END LOGIC CHANGE ---
 
-    const token = authHeader.substring(7); // "Bearer " ko hatakar token nikalein
-    if (!ALLOWED_KEYS.includes(token)) {
-        return new Response(JSON.stringify({ error: "Unauthorized: Invalid API Key." }), {
-            status: 401,
-            headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-        });
-    }
-    // --- END OF AUTHENTICATION LOGIC ---
-
-    if (req.method !== "POST") {
-        return new Response(JSON.stringify({ error: "Method Not Allowed." }), { status: 405 });
-    }
-
-    try {
-        const body = await req.json();
-        const { message, model: modelKey, context } = body;
-        let result;
-
-        if (url.pathname === "/generate") {
-            const modelId = MODEL_MAP[modelKey] || MODEL_MAP["Nexari G1"];
-            const fullPrompt = buildFullPrompt(message, context);
-            result = await callHuggingFaceTextAPI(modelId, fullPrompt);
-        } else if (url.pathname === "/generate-image") {
-            result = await callHuggingFaceImageAPI(message);
-        } else {
-            return new Response(JSON.stringify({ error: "Not Found" }), { status: 404 });
-        }
-
-        return new Response(JSON.stringify(result), {
-            status: result.error ? 500 : 200,
-            headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-        });
+      return new Response(JSON.stringify(result), {
+        status: result.error ? 500 : 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     } catch (err) {
-        return new Response(JSON.stringify({ error: `Invalid JSON body: ${err.message}` }), { status: 400 });
+      return new Response(JSON.stringify({ error: `Invalid JSON body: ${err.message}` }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
+  }
+
+  return new Response(JSON.stringify({ error: "Not Found. Use POST /generate." }), {
+    status: 404,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
 });
 
-console.log(`Deno AI worker with built-in auth started on http://localhost:8000`);
-console.log(`Allowed System Keys loaded: ${ALLOWED_KEYS.length}`);
-
+console.log("Deno AI worker with context support started.");
