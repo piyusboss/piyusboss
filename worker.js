@@ -1,10 +1,12 @@
-// ✅ WORKER.JS (Final Enhanced Version)
+// ✅ WORKER.JS (Final Fixed Version)
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { toArrayBuffer } from "https://deno.land/std@0.224.0/streams/to_array_buffer.ts";
 
+// Environment variables se secret keys load karna behtar hai.
+// Inhe Deno Deploy ya apne server environment mein set karein.
 const HUGGING_FACE_API_KEY = Deno.env.get("HUGGING_FACE_API_KEY");
-const ALLOWED_KEYS = (Deno.env.get("NEXARI_ALLOWED_KEYS") || "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").split(",");
+const NEXARI_PHP_KEY = Deno.env.get("NEXARI_PHP_KEY") || "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";
 
 const MODEL_MAP = {
   "Nexari G1": "meta-llama/Meta-Llama-3-8B-Instruct"
@@ -12,7 +14,7 @@ const MODEL_MAP = {
 const IMAGE_MODEL_ID = "stabilityai/stable-diffusion-xl-base-1.0";
 
 const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": "*", // Production mein ise apne PHP server ke domain se badlein
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization"
 };
@@ -40,6 +42,7 @@ async function retryFetch(requestFn, retries = 3, delay = 500) {
       await new Promise(res => setTimeout(res, delay));
     }
   }
+  return Promise.reject("Fetch failed after all retries.");
 }
 
 async function callHuggingFaceTextAPI(modelId, prompt) {
@@ -53,8 +56,11 @@ async function callHuggingFaceTextAPI(modelId, prompt) {
       body: JSON.stringify({ inputs: prompt, parameters: { max_new_tokens: 1500 } })
     });
     const data = await res.json();
-    if (!res.ok) return { error: data.error || `Text API error: ${res.status}` };
-    return { response: data[0]?.generated_text?.trim() || "" };
+    if (!res.ok) {
+        throw new Error(data.error || `Text API error: ${res.status}`);
+    }
+    // FIX: PHP script ke liye response ko 'data' key mein wrap kiya gaya hai.
+    return { data: data[0]?.generated_text?.replace(/\[\/INST\]/g, '').trim() || "" };
   });
 }
 
@@ -70,14 +76,19 @@ async function callHuggingFaceImageAPI(prompt) {
     });
 
     if (!res.ok) {
-      const err = await res.text();
-      return { error: JSON.parse(err).error || `Image API error: ${res.status}` };
+      const errText = await res.text();
+      let errorMsg = `Image API error: ${res.status}`;
+      try {
+        errorMsg = JSON.parse(errText).error || errorMsg;
+      } catch (e) { /* Ignore parsing error */ }
+      throw new Error(errorMsg);
     }
 
     const imageBuffer = await toArrayBuffer(res.body);
     const base64 = btoa(String.fromCharCode(...new Uint8Array(imageBuffer)));
+    // FIX: PHP script ke liye response ko 'data' key mein wrap kiya gaya hai.
     return {
-      image_url: `data:${res.headers.get("content-type")};base64,${base64}`
+      data: `data:${res.headers.get("content-type")};base64,${base64}`
     };
   });
 }
@@ -96,8 +107,8 @@ serve(async (req) => {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
   }
 
-  const auth = req.headers.get("Authorization")?.replace("Bearer ", "");
-  if (!auth || !ALLOWED_KEYS.includes(auth)) {
+  const authKey = req.headers.get("Authorization")?.replace("Bearer ", "");
+  if (authKey !== NEXARI_PHP_KEY) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
       headers: { ...CORS_HEADERS, "Content-Type": "application/json" }
@@ -110,24 +121,34 @@ serve(async (req) => {
       headers: { ...CORS_HEADERS, "Content-Type": "application/json" }
     });
   }
+  
+  const url = new URL(req.url);
+  const routeHandler = routes[url.pathname];
+
+  if (!routeHandler) {
+    return new Response(JSON.stringify({ error: "Invalid endpoint" }), {
+      status: 404,
+      headers: { ...CORS_HEADERS, "Content-Type": "application/json" }
+    });
+  }
 
   try {
     const body = await req.json();
-    const routeHandler = routes[new URL(req.url).pathname];
-    if (!routeHandler) {
-      return new Response(JSON.stringify({ error: "Invalid endpoint" }), {
-        status: 404,
+    if (!body.message) {
+       return new Response(JSON.stringify({ error: "Invalid JSON: 'message' field is missing." }), {
+        status: 400,
         headers: { ...CORS_HEADERS, "Content-Type": "application/json" }
       });
     }
+
     const result = await routeHandler(body);
     return new Response(JSON.stringify(result), {
-      status: result.error ? 500 : 200,
+      status: 200,
       headers: { ...CORS_HEADERS, "Content-Type": "application/json" }
     });
   } catch (err) {
-    return new Response(JSON.stringify({ error: `Invalid JSON: ${err.message}` }), {
-      status: 400,
+    return new Response(JSON.stringify({ error: err.message || "An internal server error occurred." }), {
+      status: err instanceof SyntaxError ? 400 : 500,
       headers: { ...CORS_HEADERS, "Content-Type": "application/json" }
     });
   }
