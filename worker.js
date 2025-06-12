@@ -5,8 +5,8 @@ import { toArrayBuffer } from "https://deno.land/std@0.224.0/streams/to_array_bu
 
 // Environment variables se secret keys load karna behtar hai.
 // Inhe Deno Deploy ya apne server environment mein set karein.
-const HUGGING_FACE_API_KEY = Deno.env.get("HUGGING_FACE_API_KEY");
-const NEXARI_PHP_KEY = Deno.env.get("NEXARI_PHP_KEY") || "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";
+const HUGGING_FACE_API_KEY = Deno.env.get("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");
+const NEXARI_PHP_KEY = Deno.env.get("NEXARI_PHP_KEY") || "";
 
 const MODEL_MAP = {
   "Nexari G1": "meta-llama/Meta-Llama-3-8B-Instruct"
