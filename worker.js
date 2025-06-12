@@ -7,7 +7,7 @@ const HUGGING_FACE_API_KEY = Deno.env.get("HUGGING_FACE_API_KEY");
 const ALLOWED_KEYS = (Deno.env.get("NEXARI_ALLOWED_KEYS") || "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").split(",");
 
 const MODEL_MAP = {
-  "Nexari G1": "mistralai/Mixtral-8x7B-Instruct-v0.1"
+  "Nexari G1": "meta-llama/Meta-Llama-3-8B-Instruct"
 };
 const IMAGE_MODEL_ID = "stabilityai/stable-diffusion-xl-base-1.0";
 
