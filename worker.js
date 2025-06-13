@@ -1,19 +1,10 @@
-// ✅ WORKER.JS (Corrected for case-sensitivity)
+// ✅ WORKER.JS (Final Enhanced Version)
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { toArrayBuffer } from "https://deno.land/std@0.224.0/streams/to_array_buffer.ts";
 
-// Key 1: Hugging Face se baat karne ke liye. Yeh 'hf_...' se shuru honi chahiye.
-const HUGGING_FACE_API_KEY = Deno.env.get("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");
-
-// Key 2: Hamare PHP server se baat karne ke liye. Yeh hamari banayi hui internal key hai.
-const NEXARI_PHP_KEY = Deno.env.get("$#my_super_secret_php_to_deno_key_789!@");
-
-// Script ke shuru mein hi check karein ki keys set hain ya nahi.
-if (!HUGGING_FACE_API_KEY || !NEXARI_PHP_KEY) {
-  console.error("FATAL ERROR: Environment variables HUGGING_FACE_API_KEY and NEXARI_PHP_KEY must be set.");
-  // Deno.exit(1); // Production deployment ke liye is line ko uncomment karein
-}
+const HUGGING_FACE_API_KEY = Deno.env.get("HUGGING_FACE_API_KEY");
+const ALLOWED_KEYS = (Deno.env.get("NEXARI_ALLOWED_KEYS") || "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").split(",");
 
 const MODEL_MAP = {
   "Nexari G1": "tiiuae/falcon-7b"
@@ -40,25 +31,18 @@ function buildFullPrompt(message, context, instruction = "") {
   return prompt;
 }
 
-// ================== FIX START ==================
-// YEH HAI SAHI DEFINITION (chhota 'r')
 async function retryFetch(requestFn, retries = 3, delay = 500) {
   for (let i = 0; i < retries; i++) {
     try {
-      // Yahan await lagana zaroori hai
       return await requestFn();
     } catch (err) {
       if (i === retries - 1) throw err;
       await new Promise(res => setTimeout(res, delay));
     }
   }
-  // Is line ki zaroorat nahi hai agar loop hamesha return ya throw karega
-  // lekin ise fallback ke liye rakha ja sakta hai.
-  return Promise.reject("Fetch failed after all retries.");
 }
 
 async function callHuggingFaceTextAPI(modelId, prompt) {
-  // YEH HAI SAHI CALL (chhota 'r')
   return retryFetch(async () => {
     const res = await fetch(`https://api-inference.huggingface.co/models/${modelId}`, {
       method: "POST",
@@ -69,15 +53,12 @@ async function callHuggingFaceTextAPI(modelId, prompt) {
       body: JSON.stringify({ inputs: prompt, parameters: { max_new_tokens: 1500 } })
     });
     const data = await res.json();
-    if (!res.ok) {
-        throw new Error(data.error || `Hugging Face Text API error: ${res.status}`);
-    }
-    return { data: data[0]?.generated_text?.replace(/\[\/INST\]/g, '').trim() || "" };
+    if (!res.ok) return { error: data.error || `Text API error: ${res.status}` };
+    return { response: data[0]?.generated_text?.trim() || "" };
   });
 }
 
 async function callHuggingFaceImageAPI(prompt) {
-  // YEH HAI SAHI CALL (chhota 'r')
   return retryFetch(async () => {
     const res = await fetch(`https://api-inference.huggingface.co/models/${IMAGE_MODEL_ID}`, {
       method: "POST",
@@ -89,22 +70,17 @@ async function callHuggingFaceImageAPI(prompt) {
     });
 
     if (!res.ok) {
-      const errText = await res.text();
-      let errorMsg = `Image API error: ${res.status}`;
-      try {
-        errorMsg = JSON.parse(errText).error || errorMsg;
-      } catch (e) { /* Ignore parsing error */ }
-      throw new Error(errorMsg);
+      const err = await res.text();
+      return { error: JSON.parse(err).error || `Image API error: ${res.status}` };
     }
 
     const imageBuffer = await toArrayBuffer(res.body);
     const base64 = btoa(String.fromCharCode(...new Uint8Array(imageBuffer)));
     return {
-      data: `data:${res.headers.get("content-type")};base64,${base64}`
+      image_url: `data:${res.headers.get("content-type")};base64,${base64}`
     };
   });
 }
-// =================== FIX END ===================
 
 const routes = {
   "/generate": async (data) => {
@@ -120,42 +96,38 @@ serve(async (req) => {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
   }
 
-  const authKey = req.headers.get("Authorization")?.replace("Bearer ", "");
-  if (authKey !== NEXARI_PHP_KEY) {
-    return new Response(JSON.stringify({ error: "Unauthorized: Invalid key from PHP server." }), {
+  const auth = req.headers.get("Authorization")?.replace("Bearer ", "");
+  if (!auth || !ALLOWED_KEYS.includes(auth)) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
       headers: { ...CORS_HEADERS, "Content-Type": "application/json" }
     });
   }
-  
-  const url = new URL(req.url);
-  const routeHandler = routes[url.pathname];
 
-  if (!routeHandler) {
-    return new Response(JSON.stringify({ error: "Invalid endpoint" }), {
-      status: 404,
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "Method Not Allowed" }), {
+      status: 405,
       headers: { ...CORS_HEADERS, "Content-Type": "application/json" }
     });
   }
 
   try {
     const body = await req.json();
-    if (!body.message) {
-       return new Response(JSON.stringify({ error: "Invalid JSON: 'message' field is missing." }), {
-        status: 400,
+    const routeHandler = routes[new URL(req.url).pathname];
+    if (!routeHandler) {
+      return new Response(JSON.stringify({ error: "Invalid endpoint" }), {
+        status: 404,
         headers: { ...CORS_HEADERS, "Content-Type": "application/json" }
       });
     }
-
     const result = await routeHandler(body);
     return new Response(JSON.stringify(result), {
-      status: 200,
+      status: result.error ? 500 : 200,
       headers: { ...CORS_HEADERS, "Content-Type": "application/json" }
     });
   } catch (err) {
-    console.error("Handler Error:", err); // Server-side error logging ko behtar banayein
-    return new Response(JSON.stringify({ error: err.message || "An internal server error occurred." }), {
-      status: err instanceof SyntaxError ? 400 : 500,
+    return new Response(JSON.stringify({ error: `Invalid JSON: ${err.message}` }), {
+      status: 400,
       headers: { ...CORS_HEADERS, "Content-Type": "application/json" }
     });
   }
