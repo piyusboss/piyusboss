@@ -8,7 +8,7 @@ import { toArrayBuffer } from "https://deno.land/std@0.224.0/streams/to_array_bu
 // Isse yeh sunishchit hoga ki sahi keys istemal ho rahi hain.
 
 // Key 1: Hugging Face se baat karne ke liye. Yeh 'hf_...' se shuru honi chahiye.
-const HUGGING_FACE_API_KEY = Deno.env.get("HUGGING_FACE_API_KEY");
+const HUGGING_FACE_API_KEY = Deno.env.get("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");
 
 // Key 2: Hamare PHP server se baat karne ke liye. Yeh hamari banayi hui internal key hai.
 const NEXARI_PHP_KEY = Deno.env.get("NEXARI_PHP_KEY");
