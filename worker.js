@@ -7,7 +7,7 @@ import { toArrayBuffer } from "https://deno.land/std@0.224.0/streams/to_array_bu
 const HUGGING_FACE_API_KEY = Deno.env.get("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");
 
 // Key 2: Hamare PHP server se baat karne ke liye. Yeh hamari banayi hui internal key hai.
-const NEXARI_PHP_KEY = Deno.env.get("NEXARI_PHP_KEY");
+const NEXARI_PHP_KEY = Deno.env.get("$#my_super_secret_php_to_deno_key_789!@");
 
 // Script ke shuru mein hi check karein ki keys set hain ya nahi.
 if (!HUGGING_FACE_API_KEY || !NEXARI_PHP_KEY) {
