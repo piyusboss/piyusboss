@@ -4,7 +4,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { toArrayBuffer } from "https://deno.land/std@0.224.0/streams/to_array_buffer.ts";
 
 const HUGGING_FACE_API_KEY = Deno.env.get("HUGGING_FACE_API_KEY");
-const ALLOWED_KEYS = (Deno.env.get("NEXARI_ALLOWED_KEYS") || "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").split(",");
+const ALLOWED_KEYS = (Deno.env.get("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") || "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").split(",");
 
 const MODEL_MAP = {
   "Nexari G1": "tiiuae/falcon-7b"
